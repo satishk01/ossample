@@ -94,18 +94,8 @@ router.get('/audit/debug', async (req, res, next) => {
       query: { match_all: {} }
     };
     
-    // Define all audit indices for multiple years (same as in service)
-    const AUDIT_VEHICLES_INDICES = [
-      'audit_vehicles_2025', 'audit_vehicles_2026', 'audit_vehicles_2027',
-      'audit_vehicles_2028', 'audit_vehicles_2029', 'audit_vehicles_2030'
-    ];
-    const AUDIT_DETAILS_INDICES = [
-      'audit_details_2025', 'audit_details_2026', 'audit_details_2027', 
-      'audit_details_2028', 'audit_details_2029', 'audit_details_2030'
-    ];
-
     const vehiclesResponse = await client.search({
-      index: AUDIT_VEHICLES_INDICES,
+      index: 'audit_vehicles_2026',
       body: vehiclesQuery,
       timeout: '10s'
     });
@@ -120,7 +110,7 @@ router.get('/audit/debug', async (req, res, next) => {
     };
     
     const detailsResponse = await client.search({
-      index: AUDIT_DETAILS_INDICES,
+      index: 'audit_details_2026',
       body: detailsQuery,
       timeout: '10s'
     });
@@ -145,7 +135,7 @@ router.get('/audit/debug', async (req, res, next) => {
       
       try {
         const matchResponse = await client.search({
-          index: AUDIT_DETAILS_INDICES,
+          index: 'audit_details_2026',
           body: matchQuery,
           timeout: '10s'
         });
@@ -156,8 +146,7 @@ router.get('/audit/debug', async (req, res, next) => {
     }
     
     const debugInfo = {
-      audit_vehicles_indices: {
-        indices_searched: AUDIT_VEHICLES_INDICES,
+      audit_vehicles_2026: {
         total_count: vehiclesTotalCount,
         sample_records: vehicleHits.length,
         sample_vehicle_ids: sampleVehicleIds,
@@ -165,28 +154,24 @@ router.get('/audit/debug', async (req, res, next) => {
           audit_vehicle_id: hit._source?.audit_vehicle_id,
           vin: hit._source?.vin,
           urn: hit._source?.urn,
-          create_ts: hit._source?.create_ts,
-          index: hit._index // Show which index each record came from
+          create_ts: hit._source?.create_ts
         }))
       },
-      audit_details_indices: {
-        indices_searched: AUDIT_DETAILS_INDICES,
+      audit_details_2026: {
         total_count: detailsTotalCount,
         sample_records: detailHits.length,
         sample_data: detailHits.map(hit => ({
           audit_vehicle_id: hit._source?.audit_vehicle_id,
           audit_detail_id: hit._source?.audit_detail_id,
           sales_event_flow_name: hit._source?.sales_event_flow_name,
-          create_detail_ts: hit._source?.create_detail_ts,
-          index: hit._index // Show which index each record came from
+          create_detail_ts: hit._source?.create_detail_ts
         }))
       },
       matching_details: {
         found_matches: matchingDetails.length,
         matches: matchingDetails.map(hit => ({
           audit_vehicle_id: hit._source?.audit_vehicle_id,
-          sales_event_flow_name: hit._source?.sales_event_flow_name,
-          index: hit._index // Show which index each record came from
+          sales_event_flow_name: hit._source?.sales_event_flow_name
         }))
       }
     };

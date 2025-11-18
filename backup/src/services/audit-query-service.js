@@ -1,23 +1,7 @@
 const OpenSearchClient = require('./opensearch-client');
 
-// Define all audit indices for multiple years
-const AUDIT_VEHICLES_INDICES = [
-  'audit_vehicles_2025',
-  'audit_vehicles_2026',
-  'audit_vehicles_2027',
-  'audit_vehicles_2028',
-  'audit_vehicles_2029',
-  'audit_vehicles_2030'
-];
-
-const AUDIT_DETAILS_INDICES = [
-  'audit_details_2025',
-  'audit_details_2026',
-  'audit_details_2027',
-  'audit_details_2028',
-  'audit_details_2029',
-  'audit_details_2030'
-];
+const AUDIT_VEHICLES_INDEX = 'audit_vehicles_2026';
+const AUDIT_DETAILS_INDEX = 'audit_details_2026';
 
 const logger = {
   info: (msg) => console.log(`[INFO] ${msg}`),
@@ -440,7 +424,7 @@ class AuditQueryService {
       ];
 
       logger.info(`Fetching audit details for ${auditVehicleIds.length} vehicle IDs: [${auditVehicleIds.slice(0, 3).join(', ')}${auditVehicleIds.length > 3 ? '...' : ''}]`);
-      logger.info(`Using audit details indices: ${AUDIT_DETAILS_INDICES.join(', ')}`);
+      logger.info(`Using audit details index: ${AUDIT_DETAILS_INDEX}`);
 
       let hits = [];
       let queryUsed = '';
@@ -454,7 +438,7 @@ class AuditQueryService {
 
         try {
           const response = await client.search({
-            index: AUDIT_DETAILS_INDICES,
+            index: AUDIT_DETAILS_INDEX,
             body: detailsQuery,
             timeout: '30s'
           });
@@ -482,12 +466,12 @@ class AuditQueryService {
             query: { match_all: {} }
           };
           const testResponse = await client.search({
-            index: AUDIT_DETAILS_INDICES,
+            index: AUDIT_DETAILS_INDEX,
             body: testQuery,
             timeout: '10s'
           });
           const testHits = testResponse.body?.hits?.hits || [];
-          logger.info(`Test query found ${testHits.length} records in audit details indices`);
+          logger.info(`Test query found ${testHits.length} records in ${AUDIT_DETAILS_INDEX} index`);
           if (testHits.length > 0) {
             logger.debug(`Sample record structure: ${JSON.stringify(testHits[0]._source, null, 2)}`);
           }
@@ -555,11 +539,8 @@ class AuditQueryService {
       logger.debug(`Audit vehicles query: ${JSON.stringify(vehiclesQuery)}`);
 
       const client = await this.getClient();
-
-      logger.info(`Searching across audit vehicles indices: ${AUDIT_VEHICLES_INDICES.join(', ')}`);
-
       const vehiclesResponse = await client.search({
-        index: AUDIT_VEHICLES_INDICES,
+        index: AUDIT_VEHICLES_INDEX,
         body: vehiclesQuery,
         timeout: '30s'
       });
