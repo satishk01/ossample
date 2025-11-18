@@ -1,8 +1,7 @@
 const OpenSearchClient = require('./opensearch-client');
-const settings = require('../config/settings');
 
-const AUDIT_VEHICLES_INDEX = 'audit_vehicles_2025';
-const AUDIT_DETAILS_INDEX = 'audit_details_2025';
+const AUDIT_VEHICLES_INDEX = 'audit_vehicles_2026';
+const AUDIT_DETAILS_INDEX = 'audit_details_2026';
 
 const logger = {
   info: (msg) => console.log(`[INFO] ${msg}`),
@@ -15,6 +14,14 @@ class AuditQueryService {
     this.opensearchClient = null;
     this.clientInitialized = false;
     this.initializationPromise = null;
+
+    // Define field types based on the actual index mapping
+    this.keywordFields = ['audit_vehicle_id', 'region_id', 'sales_business_year_month_key', 'event_message_id', 'batch_id', 'create_id', 'update_id', 'model_year'];
+    this.textWithKeywordFields = ['vin', 'urn', 'model_code', 'distributor_name', 'region_name', 'dealer_code', 'sales_series', 'sales_process_name', 'sales_event_status', 'status_message'];
+    this.numericWithKeywordFields = ['sales_process_id', 'sales_event_status_id', 'audit_vehicle_sequence'];
+    this.dateFields = ['sales_business_date', 'create_ts', 'update_ts'];
+    this.dateNanoFields = ['create_ts', 'update_ts'];
+    this.booleanFields = ['fleet_indicator'];
   }
 
   /**
@@ -75,21 +82,31 @@ class AuditQueryService {
     if (filters && Object.keys(filters).length > 0) {
       Object.keys(filters).forEach(field => {
         const value = filters[field];
-        
+
         if (Array.isArray(value) && value.length > 0) {
-          // Handle array filters
-          if (field === 'fleet_indicator') {
-            // Handle boolean array
+          // Handle array filters based on field type
+          if (this.booleanFields.includes(field)) {
             mustFilters.push({
-              terms: {
-                [field]: value
-              }
+              terms: { [field]: value }
+            });
+          } else if (this.keywordFields.includes(field) || this.numericWithKeywordFields.includes(field)) {
+            mustFilters.push({
+              terms: { [field]: value }
+            });
+          } else if (this.textWithKeywordFields.includes(field)) {
+            // For text fields, use .keyword for exact matching
+            mustFilters.push({
+              terms: { [`${field}.keyword`]: value }
             });
           } else {
-            // Handle string/number arrays
+            // Default case - try both field and .keyword
             mustFilters.push({
-              terms: {
-                [`${field}.keyword`]: value
+              bool: {
+                should: [
+                  { terms: { [field]: value } },
+                  { terms: { [`${field}.keyword`]: value } }
+                ],
+                minimum_should_match: 1
               }
             });
           }
@@ -98,7 +115,7 @@ class AuditQueryService {
           const rangeFilter = {};
           if (value.gte) rangeFilter.gte = value.gte;
           if (value.lte) rangeFilter.lte = value.lte;
-          
+
           mustFilters.push({
             range: {
               [field]: rangeFilter
@@ -112,7 +129,7 @@ class AuditQueryService {
     if (inlineFilters && Array.isArray(inlineFilters) && inlineFilters.length > 0) {
       inlineFilters.forEach(filter => {
         const { field, condition, value } = filter;
-        
+
         switch (condition) {
           case '>=':
             mustFilters.push({
@@ -135,11 +152,20 @@ class AuditQueryService {
             });
             break;
           case '=':
-            if (typeof value === 'boolean' || field === 'fleet_indicator') {
+            if (this.booleanFields.includes(field) || typeof value === 'boolean') {
               mustFilters.push({
                 term: { [field]: value }
               });
+            } else if (this.keywordFields.includes(field) || this.numericWithKeywordFields.includes(field)) {
+              mustFilters.push({
+                term: { [field]: value }
+              });
+            } else if (this.textWithKeywordFields.includes(field)) {
+              mustFilters.push({
+                term: { [`${field}.keyword`]: value }
+              });
             } else {
+              // Default case - try both field and .keyword
               mustFilters.push({
                 bool: {
                   should: [
@@ -152,15 +178,26 @@ class AuditQueryService {
             }
             break;
           case '!=':
-            if (typeof value === 'boolean' || field === 'fleet_indicator') {
+            if (this.booleanFields.includes(field) || typeof value === 'boolean') {
               mustFilters.push({
                 bool: {
-                  must_not: [
-                    { term: { [field]: value } }
-                  ]
+                  must_not: [{ term: { [field]: value } }]
+                }
+              });
+            } else if (this.keywordFields.includes(field) || this.numericWithKeywordFields.includes(field)) {
+              mustFilters.push({
+                bool: {
+                  must_not: [{ term: { [field]: value } }]
+                }
+              });
+            } else if (this.textWithKeywordFields.includes(field)) {
+              mustFilters.push({
+                bool: {
+                  must_not: [{ term: { [`${field}.keyword`]: value } }]
                 }
               });
             } else {
+              // Default case - try both field and .keyword
               mustFilters.push({
                 bool: {
                   must_not: [
@@ -179,30 +216,90 @@ class AuditQueryService {
             }
             break;
           case 'contains':
-            mustFilters.push({
-              wildcard: {
-                [`${field}.keyword`]: {
-                  value: `*${value}*`,
-                  case_insensitive: true
+            if (this.textWithKeywordFields.includes(field)) {
+              mustFilters.push({
+                wildcard: {
+                  [`${field}.keyword`]: {
+                    value: `*${value}*`,
+                    case_insensitive: true
+                  }
                 }
-              }
-            });
-            break;
-          case 'not_contains':
-            mustFilters.push({
-              bool: {
-                must_not: [
-                  {
-                    wildcard: {
-                      [`${field}.keyword`]: {
-                        value: `*${value}*`,
-                        case_insensitive: true
+              });
+            } else {
+              // For keyword fields, try both approaches
+              mustFilters.push({
+                bool: {
+                  should: [
+                    {
+                      wildcard: {
+                        [field]: {
+                          value: `*${value}*`,
+                          case_insensitive: true
+                        }
+                      }
+                    },
+                    {
+                      wildcard: {
+                        [`${field}.keyword`]: {
+                          value: `*${value}*`,
+                          case_insensitive: true
+                        }
                       }
                     }
-                  }
-                ]
-              }
-            });
+                  ],
+                  minimum_should_match: 1
+                }
+              });
+            }
+            break;
+          case 'not_contains':
+            if (this.textWithKeywordFields.includes(field)) {
+              mustFilters.push({
+                bool: {
+                  must_not: [
+                    {
+                      wildcard: {
+                        [`${field}.keyword`]: {
+                          value: `*${value}*`,
+                          case_insensitive: true
+                        }
+                      }
+                    }
+                  ]
+                }
+              });
+            } else {
+              // For keyword fields, try both approaches
+              mustFilters.push({
+                bool: {
+                  must_not: [
+                    {
+                      bool: {
+                        should: [
+                          {
+                            wildcard: {
+                              [field]: {
+                                value: `*${value}*`,
+                                case_insensitive: true
+                              }
+                            }
+                          },
+                          {
+                            wildcard: {
+                              [`${field}.keyword`]: {
+                                value: `*${value}*`,
+                                case_insensitive: true
+                              }
+                            }
+                          }
+                        ],
+                        minimum_should_match: 1
+                      }
+                    }
+                  ]
+                }
+              });
+            }
             break;
         }
       });
@@ -229,9 +326,9 @@ class AuditQueryService {
 
     sortFields.forEach(sort => {
       const { field, order } = sort;
-      
+
       // Use .keyword for text fields to ensure proper sorting
-      const sortField = ['vin', 'urn', 'model_code', 'distributor_name', 'region_name', 
+      const sortField = ['vin', 'urn', 'model_code', 'distributor_name', 'region_name',
                        'dealer_code', 'sales_series', 'sales_process_name', 'sales_event_status',
                        'status_message', 'event_message_id', 'batch_id', 'create_id', 'update_id']
                        .includes(field) ? `${field}.keyword` : field;
@@ -261,7 +358,7 @@ class AuditQueryService {
    */
   _buildAuditVehiclesQuery(filters, pagination, inlineFilters, sortFields) {
     const mustFilters = this._buildFilters(filters, inlineFilters);
-    
+
     const query = {
       size: pagination.page_size,
       from: (pagination.page - 1) * pagination.page_size,
@@ -290,23 +387,23 @@ class AuditQueryService {
 
     try {
       const client = await this.getClient();
-      
+
       const detailsQuery = {
         size: 10000, // Large size to get all details
         query: {
           terms: {
-            "audit_vehicle_id.keyword": auditVehicleIds
+            "audit_vehicle_id": auditVehicleIds
           }
         },
         sort: [
-          { "audit_vehicle_id.keyword": "asc" },
+          { "audit_vehicle_id": "asc" },
           { "audit_detail_sequence": "asc" },
           { "create_detail_ts": "asc" }
         ]
       };
 
       logger.debug(`Fetching audit details for ${auditVehicleIds.length} vehicle IDs`);
-      
+
       const response = await client.search({
         index: AUDIT_DETAILS_INDEX,
         body: detailsQuery,
@@ -321,11 +418,11 @@ class AuditQueryService {
       hits.forEach(hit => {
         const detail = hit._source;
         const auditVehicleId = detail.audit_vehicle_id;
-        
+
         if (!detailsMap[auditVehicleId]) {
           detailsMap[auditVehicleId] = [];
         }
-        
+
         detailsMap[auditVehicleId].push({
           "Activity Date": detail.create_detail_ts,
           "Activity": detail.sales_event_flow_name,
@@ -351,7 +448,7 @@ class AuditQueryService {
    */
   async executeAuditHistoryQuery(filters = null, pagination = null, inlineFilters = null, sortFields = null) {
     const startTime = Date.now();
-    
+
     try {
       logger.info('Executing audit history query');
 
@@ -362,7 +459,7 @@ class AuditQueryService {
 
       // Build and execute audit vehicles query
       const vehiclesQuery = this._buildAuditVehiclesQuery(filters, pagination, inlineFilters, sortFields);
-      
+
       logger.debug(`Audit vehicles query: ${JSON.stringify(vehiclesQuery)}`);
 
       const client = await this.getClient();
@@ -374,7 +471,7 @@ class AuditQueryService {
 
       const vehicleHits = vehiclesResponse.body?.hits?.hits || [];
       const totalCount = vehiclesResponse.body?.hits?.total?.value || 0;
-      
+
       logger.info(`Found ${vehicleHits.length} audit vehicle records, total: ${totalCount}`);
 
       if (vehicleHits.length === 0) {
@@ -396,7 +493,7 @@ class AuditQueryService {
 
       // Extract audit vehicle IDs for details lookup
       const auditVehicleIds = vehicleHits.map(hit => hit._source.audit_vehicle_id);
-      
+
       // Get audit details for all vehicles
       const auditDetailsMap = await this._getAuditDetails(auditVehicleIds);
 
@@ -404,7 +501,7 @@ class AuditQueryService {
       const rows = vehicleHits.map(hit => {
         const vehicle = hit._source;
         const auditDetails = auditDetailsMap[vehicle.audit_vehicle_id] || [];
-        
+
         return {
           createdOn: vehicle.create_ts,
           activity_id: vehicle.audit_vehicle_id,
