@@ -5,8 +5,6 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const settings = require('./config/settings');
-const pipRoutes = require('./routes/pip-routes');
-const pipelineRoutes = require('./routes/pipeline-routes');
 const auditRoutes = require('./routes/audit-routes');
 const errorHandler = require('./middleware/error-handler');
 
@@ -32,8 +30,6 @@ app.use(express.urlencoded({ extended: true }));
 app.use(morgan('combined'));
 
 // Apply routes
-app.use('/', pipRoutes);
-app.use('/kpi-charts-list', pipelineRoutes);
 app.use('/', auditRoutes);
 
 // Error handling middleware (must be after all routes)
