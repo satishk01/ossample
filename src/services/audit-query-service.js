@@ -6,7 +6,8 @@ const AUDIT_DETAILS_INDEX = 'audit_details_2026';
 const logger = {
   info: (msg) => console.log(`[INFO] ${msg}`),
   error: (msg) => console.error(`[ERROR] ${msg}`),
-  debug: (msg) => console.log(`[DEBUG] ${msg}`)
+  debug: (msg) => console.log(`[DEBUG] ${msg}`),
+  warn: (msg) => console.warn(`[WARN] ${msg}`)
 };
 
 class AuditQueryService {
