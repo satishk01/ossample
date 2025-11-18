@@ -628,6 +628,13 @@ class AuditQueryService {
       const executionTime = (Date.now() - startTime) / 1000;
       logger.info(`Audit history query executed successfully in ${executionTime.toFixed(2)} seconds`);
 
+      // Calculate pagination details
+      const currentPage = pagination.page;
+      const pageSize = pagination.page_size;
+      const totalPages = Math.ceil(totalCount / pageSize);
+      const hasNextPage = currentPage < totalPages;
+      const hasPreviousPage = currentPage > 1;
+
       return {
         success: true,
         data: {
@@ -637,6 +644,13 @@ class AuditQueryService {
             rows: rows,
             totalCount: totalCount,
             headerDetails: [{ "appName": "CSTR" }]
+          },
+          pagination: {
+            current_page: currentPage,
+            page_size: pageSize,
+            total_pages: totalPages,
+            has_next_page: hasNextPage,
+            has_previous_page: hasPreviousPage
           },
           message: "Audit Details Retrieved Successfully",
           error: null
