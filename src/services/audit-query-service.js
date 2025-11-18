@@ -14,7 +14,7 @@ class AuditQueryService {
     this.opensearchClient = null;
     this.clientInitialized = false;
     this.initializationPromise = null;
-
+    
     // Define field types based on the actual index mapping
     this.keywordFields = ['audit_vehicle_id', 'region_id', 'sales_business_year_month_key', 'event_message_id', 'batch_id', 'create_id', 'update_id', 'model_year'];
     this.textWithKeywordFields = ['vin', 'urn', 'model_code', 'distributor_name', 'region_name', 'dealer_code', 'sales_series', 'sales_process_name', 'sales_event_status', 'status_message'];
@@ -82,7 +82,7 @@ class AuditQueryService {
     if (filters && Object.keys(filters).length > 0) {
       Object.keys(filters).forEach(field => {
         const value = filters[field];
-
+        
         if (Array.isArray(value) && value.length > 0) {
           // Handle array filters based on field type
           if (this.booleanFields.includes(field)) {
@@ -115,7 +115,7 @@ class AuditQueryService {
           const rangeFilter = {};
           if (value.gte) rangeFilter.gte = value.gte;
           if (value.lte) rangeFilter.lte = value.lte;
-
+          
           mustFilters.push({
             range: {
               [field]: rangeFilter
@@ -129,7 +129,7 @@ class AuditQueryService {
     if (inlineFilters && Array.isArray(inlineFilters) && inlineFilters.length > 0) {
       inlineFilters.forEach(filter => {
         const { field, condition, value } = filter;
-
+        
         switch (condition) {
           case '>=':
             mustFilters.push({
@@ -326,12 +326,13 @@ class AuditQueryService {
 
     sortFields.forEach(sort => {
       const { field, order } = sort;
-
-      // Use .keyword for text fields to ensure proper sorting
-      const sortField = ['vin', 'urn', 'model_code', 'distributor_name', 'region_name',
-                       'dealer_code', 'sales_series', 'sales_process_name', 'sales_event_status',
-                       'status_message', 'event_message_id', 'batch_id', 'create_id', 'update_id']
-                       .includes(field) ? `${field}.keyword` : field;
+      
+      // Use .keyword for text fields that have keyword subfields
+      let sortField = field;
+      if (this.textWithKeywordFields.includes(field)) {
+        sortField = `${field}.keyword`;
+      }
+      // For keyword, numeric, date, and boolean fields, use the field as-is
 
       sortArray.push({
         [sortField]: {
@@ -358,7 +359,7 @@ class AuditQueryService {
    */
   _buildAuditVehiclesQuery(filters, pagination, inlineFilters, sortFields) {
     const mustFilters = this._buildFilters(filters, inlineFilters);
-
+    
     const query = {
       size: pagination.page_size,
       from: (pagination.page - 1) * pagination.page_size,
@@ -387,7 +388,7 @@ class AuditQueryService {
 
     try {
       const client = await this.getClient();
-
+      
       const detailsQuery = {
         size: 10000, // Large size to get all details
         query: {
@@ -403,7 +404,7 @@ class AuditQueryService {
       };
 
       logger.debug(`Fetching audit details for ${auditVehicleIds.length} vehicle IDs`);
-
+      
       const response = await client.search({
         index: AUDIT_DETAILS_INDEX,
         body: detailsQuery,
@@ -418,11 +419,11 @@ class AuditQueryService {
       hits.forEach(hit => {
         const detail = hit._source;
         const auditVehicleId = detail.audit_vehicle_id;
-
+        
         if (!detailsMap[auditVehicleId]) {
           detailsMap[auditVehicleId] = [];
         }
-
+        
         detailsMap[auditVehicleId].push({
           "Activity Date": detail.create_detail_ts,
           "Activity": detail.sales_event_flow_name,
@@ -448,7 +449,7 @@ class AuditQueryService {
    */
   async executeAuditHistoryQuery(filters = null, pagination = null, inlineFilters = null, sortFields = null) {
     const startTime = Date.now();
-
+    
     try {
       logger.info('Executing audit history query');
 
@@ -459,7 +460,7 @@ class AuditQueryService {
 
       // Build and execute audit vehicles query
       const vehiclesQuery = this._buildAuditVehiclesQuery(filters, pagination, inlineFilters, sortFields);
-
+      
       logger.debug(`Audit vehicles query: ${JSON.stringify(vehiclesQuery)}`);
 
       const client = await this.getClient();
@@ -471,7 +472,7 @@ class AuditQueryService {
 
       const vehicleHits = vehiclesResponse.body?.hits?.hits || [];
       const totalCount = vehiclesResponse.body?.hits?.total?.value || 0;
-
+      
       logger.info(`Found ${vehicleHits.length} audit vehicle records, total: ${totalCount}`);
 
       if (vehicleHits.length === 0) {
@@ -493,7 +494,7 @@ class AuditQueryService {
 
       // Extract audit vehicle IDs for details lookup
       const auditVehicleIds = vehicleHits.map(hit => hit._source.audit_vehicle_id);
-
+      
       // Get audit details for all vehicles
       const auditDetailsMap = await this._getAuditDetails(auditVehicleIds);
 
@@ -501,7 +502,7 @@ class AuditQueryService {
       const rows = vehicleHits.map(hit => {
         const vehicle = hit._source;
         const auditDetails = auditDetailsMap[vehicle.audit_vehicle_id] || [];
-
+        
         return {
           createdOn: vehicle.create_ts,
           activity_id: vehicle.audit_vehicle_id,
